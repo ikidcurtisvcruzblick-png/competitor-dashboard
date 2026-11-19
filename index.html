@@ -100,8 +100,8 @@ function boot(data) {
   RAW = data.rows;
   $('updated').textContent = '最近更新：' + data.updated;
   const sites = ['US','UK','DE','FR','IT','ES'].filter(s => RAW.some(r => r.site === s));
-  $('fSite').innerHTML = sites.map(s => `<option>${s}</option>`).join('');
-  state.site = sites[0];
+  $('fSite').innerHTML = '<option value="all">全部市场</option>' + sites.map(s => `<option>${s}</option>`).join('');
+  state.site = sites[0]; $('fSite').value = state.site;
   const dates = [...new Set(RAW.map(r => r.date))].sort();
   state.maxDate = dates[dates.length - 1]; state.minDate = dates[0];
   $('fFrom').min = $('fTo').min = state.minDate; $('fFrom').max = $('fTo').max = state.maxDate;
@@ -134,11 +134,11 @@ function bind() {
 }
 function clearQuick() { document.querySelectorAll('#quick button').forEach(b => b.classList.remove('on')); }
 function refreshBrands() {
-  const brands = [...new Set(RAW.filter(r => r.site === state.site && (state.role === 'all' || r.role === state.role)).map(r => r.brand))].sort();
+  const brands = [...new Set(RAW.filter(r => siteOk(r) && (state.role === 'all' || r.role === state.role)).map(r => r.brand))].sort();
   $('fBrand').innerHTML = '<option value="all">全部品牌</option>' + brands.map(b => `<option>${b}</option>`).join('');
   $('fBrand').value = state.brand;
   // 父单名 / 运营负责人只对我方 ASIN 有值；选了这两个筛选时只显示我方
-  const ownRows = RAW.filter(r => r.site === state.site && r.role === 'own');
+  const ownRows = RAW.filter(r => siteOk(r) && r.role === 'own');
   const owners = [...new Set(ownRows.map(r => r.owner).filter(Boolean))].sort();
   const parents = [...new Set(ownRows.filter(r => state.owner === 'all' || r.owner === state.owner).map(r => r.parent).filter(Boolean))].sort();
   $('fOwner').innerHTML = '<option value="all">全部</option>' + owners.map(o => `<option>${o}</option>`).join('');
@@ -147,29 +147,31 @@ function refreshBrands() {
 }
 
 // ================= 计算 =================
+const siteOk = r => state.site === 'all' || r.site === state.site;
+const keyOf = r => r.site + '|' + r.asin;     // 同一 ASIN 在不同市场分开统计
 function filtered() {
-  return RAW.filter(r => r.site === state.site && r.date >= state.from && r.date <= state.to
+  return RAW.filter(r => siteOk(r) && r.date >= state.from && r.date <= state.to
     && (state.brand === 'all' || r.brand === state.brand) && (state.role === 'all' || r.role === state.role)
     && (state.parent === 'all' || r.parent === state.parent) && (state.owner === 'all' || r.owner === state.owner));
 }
 function byAsin(rows) {
   const m = {};
-  rows.forEach(r => (m[r.asin] = m[r.asin] || []).push(r));
+  rows.forEach(r => (m[keyOf(r)] = m[keyOf(r)] || []).push(r));
   Object.values(m).forEach(a => a.sort((x, y) => x.date < y.date ? -1 : 1));
   return m;
 }
 function summary(groups) {
-  return Object.entries(groups).map(([asin, a]) => {
-    const first = a[0], last = a[a.length - 1];
+  return Object.entries(groups).map(([key, a]) => {
+    const first = a[0], last = a[a.length - 1], asin = last.asin, site = last.site;
     const fp = a.find(x => x.price != null)?.price, lp = [...a].reverse().find(x => x.price != null)?.price;
     const oosDays = a.filter(x => x.stock === '缺货').length;
-    return { asin, brand: last.brand, role: last.role, parent: last.parent || '', owner: last.owner || '', price: lp, price0: fp,
+    return { key, asin, site, brand: last.brand, role: last.role, parent: last.parent || '', owner: last.owner || '', price: lp, price0: fp,
       dPrice: fp && lp ? (lp / fp - 1) : null, sub_bsr: last.sub_bsr, sub0: first.sub_bsr,
       dBsr: first.sub_bsr && last.sub_bsr ? first.sub_bsr - last.sub_bsr : null,
       bestBsr: Math.min(...a.map(x => x.sub_bsr || 1e9)), stock: last.stock, oosDays, sub_cat: last.sub_cat,
       bsr: last.bsr, bsr0: first.bsr, dBig: first.bsr && last.bsr ? first.bsr - last.bsr : null,
       big_cat: [...a].reverse().find(x => x.big_cat)?.big_cat || '',
-      days: a.length, url: domain(state.site) + '/dp/' + asin };
+      days: a.length, url: domain(site) + '/dp/' + asin };
   });
 }
 const DOM = { US:'amazon.com', UK:'amazon.co.uk', DE:'amazon.de', FR:'amazon.fr', IT:'amazon.it', ES:'amazon.es' };
@@ -184,7 +186,7 @@ function render() {
 }
 
 function renderKpis(sum) {
-  const comp = sum.filter(s => s.role === 'comp'), c = CUR[state.site];
+  const comp = sum.filter(s => s.role === 'comp'), c = CUR[state.site] || '';
   const avg = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
   const cp = avg(comp.map(s => s.price).filter(Boolean));
   const down = comp.filter(s => s.dPrice != null && s.dPrice <= -0.03).length;
@@ -192,7 +194,7 @@ function renderKpis(sum) {
   const own = sum.filter(s => s.role === 'own').sort((a, b) => (a.sub_bsr || 1e9) - (b.sub_bsr || 1e9))[0];
   const k = [
     ['监控 ASIN', sum.length],
-    ['竞品均价', cp ? c + cp.toFixed(2) : '-'],
+    ['竞品均价', state.site === 'all' ? '选单个市场查看' : cp ? c + cp.toFixed(2) : '-'],
     ['区间内降价竞品', down, down ? 'up' : ''],
     ['当前缺货竞品', oos, oos ? 'up' : ''],
     ['我方最佳小类排名', own?.sub_bsr ? '#' + own.sub_bsr : '-'],
@@ -201,7 +203,7 @@ function renderKpis(sum) {
 }
 
 const COLS = [
-  ['role','类型'],['brand','品牌'],['asin','ASIN'],['parent','父单名'],['owner','运营负责人'],['price','当前价'],['dPrice','价格变化'],
+  ['site','市场'],['role','类型'],['brand','品牌'],['asin','ASIN'],['parent','父单名'],['owner','运营负责人'],['price','当前价'],['dPrice','价格变化'],
   ['sub_bsr','小类排名'],['dBsr','小类变化'],['bestBsr','小类最佳'],['sub_cat','小类名称'],
   ['bsr','大类排名'],['dBig','大类变化'],['big_cat','大类名称'],['stock','库存'],['oosDays','缺货天数']
 ];
@@ -212,15 +214,15 @@ function renderTable(sum) {
   document.querySelectorAll('#thead th').forEach(th => th.onclick = () => {
     state.sortAsc = state.sortKey === th.dataset.k ? !state.sortAsc : true; state.sortKey = th.dataset.k; render();
   });
-  const c = CUR[state.site];
   $('tbody').innerHTML = sum.map(s => {
+    const c = CUR[s.site];
     const dp = s.dPrice == null || Math.abs(s.dPrice) < 0.001 ? '-' :
       `<span class="${s.dPrice < 0 ? 'down' : 'up'}">${s.dPrice > 0 ? '+' : ''}${(s.dPrice * 100).toFixed(1)}%</span>`;
     const db = !s.dBsr ? '-' : `<span class="${s.dBsr > 0 ? 'down' : 'up'}">${s.dBsr > 0 ? '↑' : '↓'}${Math.abs(s.dBsr)}</span>`;
     const dbig = !s.dBig ? '-' : `<span class="${s.dBig > 0 ? 'down' : 'up'}">${s.dBig > 0 ? '↑' : '↓'}${Math.abs(s.dBig).toLocaleString()}</span>`;
     const st = s.stock === '缺货' ? '<span class="tag oos">缺货</span>' : String(s.stock || '').startsWith('仅剩') ? `<span class="tag low">${s.stock}</span>` : '有货';
-    return `<tr data-a="${s.asin}" class="${state.sel.has(s.asin) ? 'sel' : ''}">
-      <td><span class="tag ${s.role}">${s.role === 'own' ? '我方' : '竞品'}</span></td><td>${s.brand}</td>
+    return `<tr data-a="${s.key}" class="${state.sel.has(s.key) ? 'sel' : ''}">
+      <td>${s.site}</td><td><span class="tag ${s.role}">${s.role === 'own' ? '我方' : '竞品'}</span></td><td>${s.brand}</td>
       <td><a href="${s.url}" target="_blank" onclick="event.stopPropagation()">${s.asin}</a></td>
       <td>${s.parent || '-'}</td><td>${s.owner || '-'}</td>
       <td class="n">${s.price != null ? c + s.price.toFixed(2) : '-'}</td><td class="n">${dp}</td>
@@ -238,11 +240,11 @@ let chartP, chartB, chartG;
 function renderCharts(groups, sum) {
   // 默认显示：选中的 ASIN；未选择时显示小类排名最好的 8 个（含我方）
   let show = [...state.sel].filter(a => groups[a]);
-  if (!show.length) show = [...sum].sort((a, b) => (a.sub_bsr || 1e9) - (b.sub_bsr || 1e9)).slice(0, 8).map(s => s.asin);
+  if (!show.length) show = [...sum].sort((a, b) => (a.sub_bsr || 1e9) - (b.sub_bsr || 1e9)).slice(0, 8).map(s => s.key);
   const ts = d => Date.parse(d + 'T00:00:00Z');
   const mk = key => show.map(a => {
     const g = groups[a], own = g[0].role === 'own';
-    return { name: `${g[0].brand} ${a}`, dashStyle: own ? 'Solid' : 'ShortDash', lineWidth: own ? 3 : 1.6,
+    return { name: (state.site === 'all' ? g[0].site + ' ' : '') + `${g[0].brand} ${g[0].asin}`, dashStyle: own ? 'Solid' : 'ShortDash', lineWidth: own ? 3 : 1.6,
       data: g.map(x => [ts(x.date), x[key] ?? null]), marker: { radius: 2.5 } };
   });
   const base = (title, rev, prefix) => ({
@@ -255,7 +257,7 @@ function renderCharts(groups, sum) {
     plotOptions: { series: { connectNulls: false, animation: { duration: 400 } } },
   });
   chartP && chartP.destroy(); chartB && chartB.destroy(); chartG && chartG.destroy();
-  chartP = Highcharts.chart('cPrice', { ...base('价格', false, CUR[state.site]), series: mk('price') });
+  chartP = Highcharts.chart('cPrice', { ...base('价格', false, CUR[state.site] || ''), series: mk('price') });  // 全部市场时价格币种不同，仅看走势
   chartB = Highcharts.chart('cBsr', { ...base('小类排名', true, '#'), series: mk('sub_bsr') });
   chartG = Highcharts.chart('cBig', { ...base('大类排名', true, '#'), series: mk('bsr') });
 }
