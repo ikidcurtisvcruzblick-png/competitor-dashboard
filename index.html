@@ -58,7 +58,7 @@
 </head>
 <body>
 <header>
-  <div><h1>📊 剪贴簿竞品日报</h1><div class="sub">数据口径：每日前台采集 · 竞品=近3个月销量Top10（排除我方品牌）· 我方=各站点销量前3</div></div>
+  <div><h1>📊 剪贴簿竞品日报</h1><div class="sub">数据口径：每日前台采集 · 竞品=近3个月销量Top10（排除我方品牌）· 我方=我方ASIN清单</div></div>
   <div class="sub" id="updated"></div>
 </header>
 <div class="wrap">
@@ -68,6 +68,8 @@
     <div class="f"><label>结束日期</label><input type="date" id="fTo"></div>
     <div class="f"><label>快捷</label><div class="seg" id="quick"><button data-d="7">7天</button><button data-d="14">14天</button><button data-d="30" class="on">30天</button><button data-d="90">90天</button></div></div>
     <div class="f"><label>品牌</label><select id="fBrand"></select></div>
+    <div class="f"><label>父单名</label><select id="fParent"></select></div>
+    <div class="f"><label>运营负责人</label><select id="fOwner"></select></div>
     <div class="f"><label>类型</label><div class="seg" id="fRole"><button data-r="all" class="on">全部</button><button data-r="comp">竞品</button><button data-r="own">我方</button></div></div>
     <div class="f"><label>&nbsp;</label><button class="btn" id="csv">⬇ 导出CSV</button></div>
   </div>
@@ -92,7 +94,7 @@
 // 页面同目录的 data.json 由 competitor_monitor.py 每天自动生成并推送
 let RAW = window.DASH_DATA || null;
 const $ = id => document.getElementById(id);
-const state = { site: 'US', brand: 'all', role: 'all', from: '', to: '', sel: new Set(), sortKey: 'sub_bsr', sortAsc: true };
+const state = { site: 'US', brand: 'all', parent: 'all', owner: 'all', role: 'all', from: '', to: '', sel: new Set(), sortKey: 'sub_bsr', sortAsc: true };
 
 function boot(data) {
   RAW = data.rows;
@@ -116,8 +118,10 @@ function setQuick(days) {
   document.querySelectorAll('#quick button').forEach(b => b.classList.toggle('on', +b.dataset.d === days));
 }
 function bind() {
-  $('fSite').onchange = e => { state.site = e.target.value; state.brand = 'all'; state.sel.clear(); refreshBrands(); render(); };
+  $('fSite').onchange = e => { state.site = e.target.value; state.brand = 'all'; state.parent = 'all'; state.owner = 'all'; state.sel.clear(); refreshBrands(); render(); };
   $('fBrand').onchange = e => { state.brand = e.target.value; state.sel.clear(); render(); };
+  $('fParent').onchange = e => { state.parent = e.target.value; state.sel.clear(); render(); };
+  $('fOwner').onchange = e => { state.owner = e.target.value; state.parent = 'all'; state.sel.clear(); refreshBrands(); render(); };
   $('fFrom').onchange = e => { state.from = e.target.value; clearQuick(); render(); };
   $('fTo').onchange = e => { state.to = e.target.value; clearQuick(); render(); };
   document.querySelectorAll('#quick button').forEach(b => b.onclick = () => { setQuick(+b.dataset.d); render(); });
@@ -133,12 +137,20 @@ function refreshBrands() {
   const brands = [...new Set(RAW.filter(r => r.site === state.site && (state.role === 'all' || r.role === state.role)).map(r => r.brand))].sort();
   $('fBrand').innerHTML = '<option value="all">全部品牌</option>' + brands.map(b => `<option>${b}</option>`).join('');
   $('fBrand').value = state.brand;
+  // 父单名 / 运营负责人只对我方 ASIN 有值；选了这两个筛选时只显示我方
+  const ownRows = RAW.filter(r => r.site === state.site && r.role === 'own');
+  const owners = [...new Set(ownRows.map(r => r.owner).filter(Boolean))].sort();
+  const parents = [...new Set(ownRows.filter(r => state.owner === 'all' || r.owner === state.owner).map(r => r.parent).filter(Boolean))].sort();
+  $('fOwner').innerHTML = '<option value="all">全部</option>' + owners.map(o => `<option>${o}</option>`).join('');
+  $('fParent').innerHTML = '<option value="all">全部</option>' + parents.map(o => `<option>${o}</option>`).join('');
+  $('fOwner').value = state.owner; $('fParent').value = state.parent;
 }
 
 // ================= 计算 =================
 function filtered() {
   return RAW.filter(r => r.site === state.site && r.date >= state.from && r.date <= state.to
-    && (state.brand === 'all' || r.brand === state.brand) && (state.role === 'all' || r.role === state.role));
+    && (state.brand === 'all' || r.brand === state.brand) && (state.role === 'all' || r.role === state.role)
+    && (state.parent === 'all' || r.parent === state.parent) && (state.owner === 'all' || r.owner === state.owner));
 }
 function byAsin(rows) {
   const m = {};
@@ -151,7 +163,7 @@ function summary(groups) {
     const first = a[0], last = a[a.length - 1];
     const fp = a.find(x => x.price != null)?.price, lp = [...a].reverse().find(x => x.price != null)?.price;
     const oosDays = a.filter(x => x.stock === '缺货').length;
-    return { asin, brand: last.brand, role: last.role, price: lp, price0: fp,
+    return { asin, brand: last.brand, role: last.role, parent: last.parent || '', owner: last.owner || '', price: lp, price0: fp,
       dPrice: fp && lp ? (lp / fp - 1) : null, sub_bsr: last.sub_bsr, sub0: first.sub_bsr,
       dBsr: first.sub_bsr && last.sub_bsr ? first.sub_bsr - last.sub_bsr : null,
       bestBsr: Math.min(...a.map(x => x.sub_bsr || 1e9)), stock: last.stock, oosDays, sub_cat: last.sub_cat,
@@ -189,7 +201,7 @@ function renderKpis(sum) {
 }
 
 const COLS = [
-  ['role','类型'],['brand','品牌'],['asin','ASIN'],['price','当前价'],['dPrice','价格变化'],
+  ['role','类型'],['brand','品牌'],['asin','ASIN'],['parent','父单名'],['owner','运营负责人'],['price','当前价'],['dPrice','价格变化'],
   ['sub_bsr','小类排名'],['dBsr','小类变化'],['bestBsr','小类最佳'],['sub_cat','小类名称'],
   ['bsr','大类排名'],['dBig','大类变化'],['big_cat','大类名称'],['stock','库存'],['oosDays','缺货天数']
 ];
@@ -210,6 +222,7 @@ function renderTable(sum) {
     return `<tr data-a="${s.asin}" class="${state.sel.has(s.asin) ? 'sel' : ''}">
       <td><span class="tag ${s.role}">${s.role === 'own' ? '我方' : '竞品'}</span></td><td>${s.brand}</td>
       <td><a href="${s.url}" target="_blank" onclick="event.stopPropagation()">${s.asin}</a></td>
+      <td>${s.parent || '-'}</td><td>${s.owner || '-'}</td>
       <td class="n">${s.price != null ? c + s.price.toFixed(2) : '-'}</td><td class="n">${dp}</td>
       <td class="n">${s.sub_bsr ? '#' + s.sub_bsr : '-'}</td><td class="n">${db}</td><td class="n">${s.bestBsr < 1e9 ? '#' + s.bestBsr : '-'}</td>
       <td>${s.sub_cat || ''}</td>
@@ -248,7 +261,7 @@ function renderCharts(groups, sum) {
 }
 
 function exportCsv() {
-  const rows = filtered(), keys = ['date','site','role','brand','asin','price','sub_bsr','sub_cat','bsr','big_cat','stock','coupon'];
+  const rows = filtered(), keys = ['date','site','role','brand','asin','parent','owner','price','sub_bsr','sub_cat','bsr','big_cat','stock','coupon'];
   const csv = '\ufeff' + keys.join(',') + '\n' + rows.map(r => keys.map(k => `"${r[k] ?? ''}"`).join(',')).join('\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
