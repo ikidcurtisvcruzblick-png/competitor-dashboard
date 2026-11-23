@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>剪贴簿竞品日报</title>
+<script src="https://cdn.jsdelivr.net/npm/highcharts@12.1.2/highcharts.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highcharts@12.1.2/modules/accessibility.js"></script>
+<style>
+  :root{
+    --bg:#f6f7fb;--card:#fff;--text:#1a1a1a;--text2:#5e5e5e;--muted:#9ca3af;
+    --border:rgba(0,0,0,.10);--border-l:rgba(0,0,0,.06);--primary:#4f46e5;--primary-bg:#eef2ff;
+    --up:#dc2626;--down:#16a34a;--warn:#d97706;--warn-bg:#fef3c7;--err-bg:#fee2e2;
+    --font:'Segoe UI','PingFang SC','Microsoft YaHei',Roboto,sans-serif;--mono:Consolas,'SF Mono',monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);font-family:var(--font);color:var(--text);font-size:14px}
+  header{padding:20px 28px 8px;display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:8px}
+  h1{margin:0;font-size:22px}
+  .sub{color:var(--muted);font-size:12px}
+  .wrap{padding:0 28px 32px}
+  .filters{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;background:var(--card);border:1px solid var(--border-l);border-radius:10px;padding:14px 16px;margin:12px 0}
+  .f{display:flex;flex-direction:column;gap:4px}
+  .f label{font-size:12px;color:var(--muted)}
+  select,input{font:inherit;padding:6px 8px;border:1px solid var(--border);border-radius:6px;background:#fff;min-width:120px}
+  .seg{display:flex;border:1px solid var(--border);border-radius:6px;overflow:hidden}
+  .seg button{border:0;background:#fff;padding:6px 12px;cursor:pointer;font:inherit;color:var(--text2)}
+  .seg button.on{background:var(--primary);color:#fff}
+  .btn{border:1px solid var(--border);background:#fff;border-radius:6px;padding:6px 12px;cursor:pointer;font:inherit}
+  .btn:hover{background:var(--primary-bg)}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:12px}
+  .kpi{background:var(--card);border:1px solid var(--border-l);border-radius:10px;padding:14px 16px}
+  .kpi .l{font-size:12px;color:var(--muted)}
+  .kpi .v{font-size:24px;font-weight:600;font-family:var(--mono);margin-top:4px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media(max-width:1000px){.grid2{grid-template-columns:1fr}}
+  .card{background:var(--card);border:1px solid var(--border-l);border-radius:10px;padding:14px 16px;margin-bottom:12px}
+  .card h3{margin:0 0 8px;font-size:15px}
+  .hint{font-size:12px;color:var(--muted);font-weight:400}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;color:var(--muted);font-weight:500;padding:8px;border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap;user-select:none}
+  th:hover{color:var(--text)}
+  td{padding:7px 8px;border-bottom:1px solid var(--border-l);white-space:nowrap}
+  td.n{font-family:var(--mono);text-align:right}
+  tr.sel td{background:var(--primary-bg)}
+  tbody tr{cursor:pointer}
+  tbody tr:hover td{background:#f3f4f6}
+  .tag{display:inline-block;padding:1px 8px;border-radius:10px;font-size:12px}
+  .own{background:var(--primary-bg);color:var(--primary)}
+  .comp{background:#f3f4f6;color:var(--text2)}
+  .oos{background:var(--err-bg);color:var(--up)}
+  .low{background:var(--warn-bg);color:var(--warn)}
+  .up{color:var(--up)} .down{color:var(--down)}
+  .tbl{max-height:560px;overflow:auto}
+  a{color:var(--primary);text-decoration:none}
+  #msg{padding:40px;text-align:center;color:var(--muted)}
+</style>
+</head>
+<body>
+<header>
+  <div><h1>📊 剪贴簿竞品日报</h1><div class="sub">数据口径：每日前台采集 · 竞品=近3个月销量Top10（排除我方品牌）· 我方=我方ASIN清单</div></div>
+  <div class="sub" id="updated"></div>
+</header>
+<div class="wrap">
+  <div class="filters">
+    <div class="f"><label>市场</label><select id="fSite"></select></div>
+    <div class="f"><label>开始日期</label><input type="date" id="fFrom"></div>
+    <div class="f"><label>结束日期</label><input type="date" id="fTo"></div>
+    <div class="f"><label>快捷</label><div class="seg" id="quick"><button data-d="7">7天</button><button data-d="14">14天</button><button data-d="30" class="on">30天</button><button data-d="90">90天</button></div></div>
+    <div class="f"><label>品牌</label><select id="fBrand"></select></div>
+    <div class="f"><label>父单名</label><select id="fParent"></select></div>
+    <div class="f"><label>运营负责人</label><select id="fOwner"></select></div>
+    <div class="f"><label>类型</label><div class="seg" id="fRole"><button data-r="all" class="on">全部</button><button data-r="comp">竞品</button><button data-r="own">我方</button></div></div>
+    <div class="f"><label>&nbsp;</label><button class="btn" id="csv">⬇ 导出CSV</button></div>
+  </div>
+
+  <div class="kpis" id="kpis"></div>
+
+  <div class="grid2">
+    <div class="card"><h3>价格趋势 <span class="hint">点击下表行可单独查看/叠加 ASIN</span></h3><div id="cPrice" style="height:360px"></div></div>
+    <div class="card"><h3>小类排名趋势 <span class="hint">越靠上排名越好</span></h3><div id="cBsr" style="height:360px"></div></div>
+  </div>
+  <div class="card"><h3>大类排名趋势 <span class="hint">越靠上排名越好</span></h3><div id="cBig" style="height:340px"></div></div>
+
+  <div class="card">
+    <h3>ASIN 明细 <span class="hint">区间首日 → 末日变化；点击表头排序</span></h3>
+    <div class="tbl"><table><thead><tr id="thead"></tr></thead><tbody id="tbody"></tbody></table></div>
+  </div>
+  <div id="msg"></div>
+</div>
+
+<script>
+// ================= 数据加载 =================
+// 页面同目录的 data.json 由 competitor_monitor.py 每天自动生成并推送
+let RAW = window.DASH_DATA || null;
+const $ = id => document.getElementById(id);
+const state = { site: 'US', brand: 'all', parent: 'all', owner: 'all', role: 'all', from: '', to: '', sel: new Set(), sortKey: 'sub_bsr', sortAsc: true };
+
+function boot(data) {
+  RAW = data.rows;
+  $('updated').textContent = '最近更新：' + data.updated;
+  const sites = ['US','UK','DE','FR','IT','ES'].filter(s => RAW.some(r => r.site === s));
+  $('fSite').innerHTML = '<option value="all">全部市场</option>' + sites.map(s => `<option>${s}</option>`).join('');
+  state.site = sites[0]; $('fSite').value = state.site;
+  const dates = [...new Set(RAW.map(r => r.date))].sort();
+  state.maxDate = dates[dates.length - 1]; state.minDate = dates[0];
+  $('fFrom').min = $('fTo').min = state.minDate; $('fFrom').max = $('fTo').max = state.maxDate;
+  setQuick(30);
+  bind(); refreshBrands(); render();
+}
+
+// ================= 交互 =================
+function setQuick(days) {
+  const end = new Date(state.maxDate); const start = new Date(end); start.setDate(end.getDate() - days + 1);
+  state.to = state.maxDate;
+  state.from = [start.toISOString().slice(0,10), state.minDate].sort()[1];
+  $('fFrom').value = state.from; $('fTo').value = state.to;
+  document.querySelectorAll('#quick button').forEach(b => b.classList.toggle('on', +b.dataset.d === days));
+}
+function bind() {
+  $('fSite').onchange = e => { state.site = e.target.value; state.brand = 'all'; state.parent = 'all'; state.owner = 'all'; state.sel.clear(); refreshBrands(); render(); };
+  $('fBrand').onchange = e => { state.brand = e.target.value; state.sel.clear(); render(); };
+  $('fParent').onchange = e => { state.parent = e.target.value; state.sel.clear(); render(); };
+  $('fOwner').onchange = e => { state.owner = e.target.value; state.parent = 'all'; state.sel.clear(); refreshBrands(); render(); };
+  $('fFrom').onchange = e => { state.from = e.target.value; clearQuick(); render(); };
+  $('fTo').onchange = e => { state.to = e.target.value; clearQuick(); render(); };
+  document.querySelectorAll('#quick button').forEach(b => b.onclick = () => { setQuick(+b.dataset.d); render(); });
+  document.querySelectorAll('#fRole button').forEach(b => b.onclick = () => {
+    state.role = b.dataset.r; state.sel.clear();
+    document.querySelectorAll('#fRole button').forEach(x => x.classList.toggle('on', x === b));
+    refreshBrands(); render();
+  });
+  $('csv').onclick = exportCsv;
+}
+function clearQuick() { document.querySelectorAll('#quick button').forEach(b => b.classList.remove('on')); }
+function refreshBrands() {
+  const brands = [...new Set(RAW.filter(r => siteOk(r) && (state.role === 'all' || r.role === state.role)).map(r => r.brand))].sort();
+  $('fBrand').innerHTML = '<option value="all">全部品牌</option>' + brands.map(b => `<option>${b}</option>`).join('');
+  $('fBrand').value = state.brand;
+  // 父单名 / 运营负责人只对我方 ASIN 有值；选了这两个筛选时只显示我方
+  const ownRows = RAW.filter(r => siteOk(r) && r.role === 'own');
+  const owners = [...new Set(ownRows.map(r => r.owner).filter(Boolean))].sort();
+  const parents = [...new Set(ownRows.filter(r => state.owner === 'all' || r.owner === state.owner).map(r => r.parent).filter(Boolean))].sort();
+  $('fOwner').innerHTML = '<option value="all">全部</option>' + owners.map(o => `<option>${o}</option>`).join('');
+  $('fParent').innerHTML = '<option value="all">全部</option>' + parents.map(o => `<option>${o}</option>`).join('');
+  $('fOwner').value = state.owner; $('fParent').value = state.parent;
+}
+
+// ================= 计算 =================
+const siteOk = r => state.site === 'all' || r.site === state.site;
+const keyOf = r => r.site + '|' + r.asin;     // 同一 ASIN 在不同市场分开统计
+function filtered() {
+  return RAW.filter(r => siteOk(r) && r.date >= state.from && r.date <= state.to
+    && (state.brand === 'all' || r.brand === state.brand) && (state.role === 'all' || r.role === state.role)
+    && (state.parent === 'all' || r.parent === state.parent) && (state.owner === 'all' || r.owner === state.owner));
+}
+function byAsin(rows) {
+  const m = {};
+  rows.forEach(r => (m[keyOf(r)] = m[keyOf(r)] || []).push(r));
+  Object.values(m).forEach(a => a.sort((x, y) => x.date < y.date ? -1 : 1));
+  return m;
+}
+function summary(groups) {
+  return Object.entries(groups).map(([key, a]) => {
+    const first = a[0], last = a[a.length - 1], asin = last.asin, site = last.site;
+    const fp = a.find(x => x.price != null)?.price, lp = [...a].reverse().find(x => x.price != null)?.price;
+    const oosDays = a.filter(x => x.stock === '缺货').length;
+    return { key, asin, site, brand: last.brand, role: last.role, parent: last.parent || '', owner: last.owner || '', price: lp, price0: fp,
+      dPrice: fp && lp ? (lp / fp - 1) : null,
+      rating: [...a].reverse().find(x => x.rating != null)?.rating ?? null,
+      reviews: [...a].reverse().find(x => x.reviews != null)?.reviews ?? null,
+      dReviews: (() => { const f = a.find(x => x.reviews != null)?.reviews, l = [...a].reverse().find(x => x.reviews != null)?.reviews; return f != null && l != null ? l - f : null; })(), sub_bsr: last.sub_bsr, sub0: first.sub_bsr,
+      dBsr: first.sub_bsr && last.sub_bsr ? first.sub_bsr - last.sub_bsr : null,
+      bestBsr: Math.min(...a.map(x => x.sub_bsr || 1e9)), stock: last.stock, oosDays, sub_cat: last.sub_cat,
+      bsr: last.bsr, bsr0: first.bsr, dBig: first.bsr && last.bsr ? first.bsr - last.bsr : null,
+      big_cat: [...a].reverse().find(x => x.big_cat)?.big_cat || '',
+      days: a.length, url: domain(site) + '/dp/' + asin };
+  });
+}
+const DOM = { US:'amazon.com', UK:'amazon.co.uk', DE:'amazon.de', FR:'amazon.fr', IT:'amazon.it', ES:'amazon.es' };
+const domain = s => 'https://www.' + DOM[s];
+const CUR = { US:'$', UK:'£', DE:'€', FR:'€', IT:'€', ES:'€' };
+
+// ================= 渲染 =================
+function render() {
+  const rows = filtered(), groups = byAsin(rows), sum = summary(groups);
+  renderKpis(sum); renderTable(sum); renderCharts(groups, sum);
+  $('msg').textContent = rows.length ? '' : '当前筛选条件下无数据';
+}
+
+function renderKpis(sum) {
+  const comp = sum.filter(s => s.role === 'comp'), c = CUR[state.site] || '';
+  const avg = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
+  const cp = avg(comp.map(s => s.price).filter(Boolean));
+  const down = comp.filter(s => s.dPrice != null && s.dPrice <= -0.03).length;
+  const oos = comp.filter(s => s.stock === '缺货').length;
+  const own = sum.filter(s => s.role === 'own').sort((a, b) => (a.sub_bsr || 1e9) - (b.sub_bsr || 1e9))[0];
+  const k = [
+    ['监控 ASIN', sum.length],
+    ['竞品均价', state.site === 'all' ? '选单个市场查看' : cp ? c + cp.toFixed(2) : '-'],
+    ['区间内降价竞品', down, down ? 'up' : ''],
+    ['当前缺货竞品', oos, oos ? 'up' : ''],
+    ['我方最佳小类排名', own?.sub_bsr ? '#' + own.sub_bsr : '-'],
+  ];
+  $('kpis').innerHTML = k.map(([l, v, cls]) => `<div class="kpi"><div class="l">${l}</div><div class="v ${cls || ''}">${v}</div></div>`).join('');
+}
+
+const COLS = [
+  ['site','市场'],['role','类型'],['brand','品牌'],['asin','ASIN'],['parent','父单名'],['owner','运营负责人'],['price','当前价'],['dPrice','价格变化'],['rating','星级'],['reviews','Rating数'],
+  ['sub_bsr','小类排名'],['dBsr','小类变化'],['bestBsr','小类最佳'],['sub_cat','小类名称'],
+  ['bsr','大类排名'],['dBig','大类变化'],['big_cat','大类名称'],['stock','库存'],['oosDays','缺货天数']
+];
+function renderTable(sum) {
+  const k = state.sortKey, dir = state.sortAsc ? 1 : -1;
+  sum.sort((a, b) => ((a[k] ?? 1e12) > (b[k] ?? 1e12) ? 1 : (a[k] ?? 1e12) < (b[k] ?? 1e12) ? -1 : 0) * dir);
+  $('thead').innerHTML = COLS.map(([key, l]) => `<th data-k="${key}">${l}${key === k ? (state.sortAsc ? ' ▲' : ' ▼') : ''}</th>`).join('');
+  document.querySelectorAll('#thead th').forEach(th => th.onclick = () => {
+    state.sortAsc = state.sortKey === th.dataset.k ? !state.sortAsc : true; state.sortKey = th.dataset.k; render();
+  });
+  $('tbody').innerHTML = sum.map(s => {
+    const c = CUR[s.site];
+    const dp = s.dPrice == null || Math.abs(s.dPrice) < 0.001 ? '-' :
+      `<span class="${s.dPrice < 0 ? 'down' : 'up'}">${s.dPrice > 0 ? '+' : ''}${(s.dPrice * 100).toFixed(1)}%</span>`;
+    const db = !s.dBsr ? '-' : `<span class="${s.dBsr > 0 ? 'down' : 'up'}">${s.dBsr > 0 ? '↑' : '↓'}${Math.abs(s.dBsr)}</span>`;
+    const dbig = !s.dBig ? '-' : `<span class="${s.dBig > 0 ? 'down' : 'up'}">${s.dBig > 0 ? '↑' : '↓'}${Math.abs(s.dBig).toLocaleString()}</span>`;
+    const st = s.stock === '缺货' ? '<span class="tag oos">缺货</span>' : String(s.stock || '').startsWith('仅剩') ? `<span class="tag low">${s.stock}</span>` : '有货';
+    return `<tr data-a="${s.key}" class="${state.sel.has(s.key) ? 'sel' : ''}">
+      <td>${s.site}</td><td><span class="tag ${s.role}">${s.role === 'own' ? '我方' : '竞品'}</span></td><td>${s.brand}</td>
+      <td><a href="${s.url}" target="_blank" onclick="event.stopPropagation()">${s.asin}</a></td>
+      <td>${s.parent || '-'}</td><td>${s.owner || '-'}</td>
+      <td class="n">${s.price != null ? c + s.price.toFixed(2) : '-'}</td><td class="n">${dp}</td>
+      <td class="n">${s.rating != null ? '★' + s.rating.toFixed(1) : '-'}</td>
+      <td class="n">${s.reviews != null ? s.reviews.toLocaleString() + (s.dReviews ? ` <span class="hint">(+${s.dReviews})</span>` : '') : '-'}</td>
+      <td class="n">${s.sub_bsr ? '#' + s.sub_bsr : '-'}</td><td class="n">${db}</td><td class="n">${s.bestBsr < 1e9 ? '#' + s.bestBsr : '-'}</td>
+      <td>${s.sub_cat || ''}</td>
+      <td class="n">${s.bsr ? '#' + s.bsr.toLocaleString() : '-'}</td><td class="n">${dbig}</td><td>${s.big_cat || '-'}</td>
+      <td>${st}</td><td class="n">${s.oosDays || '-'}</td></tr>`;
+  }).join('');
+  document.querySelectorAll('#tbody tr').forEach(tr => tr.onclick = () => {
+    const a = tr.dataset.a; state.sel.has(a) ? state.sel.delete(a) : state.sel.add(a); render();
+  });
+}
+
+let chartP, chartB, chartG;
+function renderCharts(groups, sum) {
+  // 默认显示：选中的 ASIN；未选择时显示小类排名最好的 8 个（含我方）
+  let show = [...state.sel].filter(a => groups[a]);
+  if (!show.length) show = [...sum].sort((a, b) => (a.sub_bsr || 1e9) - (b.sub_bsr || 1e9)).slice(0, 8).map(s => s.key);
+  const ts = d => Date.parse(d + 'T00:00:00Z');
+  const mk = key => show.map(a => {
+    const g = groups[a], own = g[0].role === 'own';
+    return { name: (state.site === 'all' ? g[0].site + ' ' : '') + `${g[0].brand} ${g[0].asin}`, dashStyle: own ? 'Solid' : 'ShortDash', lineWidth: own ? 3 : 1.6,
+      data: g.map(x => [ts(x.date), x[key] ?? null]), marker: { radius: 2.5 } };
+  });
+  const base = (title, rev, prefix) => ({
+    chart: { type: 'line', backgroundColor: 'transparent', style: { fontFamily: 'inherit' } },
+    title: { text: null }, credits: { enabled: false },
+    xAxis: { type: 'datetime', labels: { format: '{value:%m-%d}' } },
+    yAxis: { title: { text: title }, reversed: rev, allowDecimals: !rev, min: rev ? 1 : null },
+    tooltip: { shared: true, xDateFormat: '%Y-%m-%d', valuePrefix: prefix || '', valueDecimals: rev ? 0 : 2 },
+    legend: { itemStyle: { fontWeight: 400, fontSize: '11px' } },
+    plotOptions: { series: { connectNulls: false, animation: { duration: 400 } } },
+  });
+  chartP && chartP.destroy(); chartB && chartB.destroy(); chartG && chartG.destroy();
+  chartP = Highcharts.chart('cPrice', { ...base('价格', false, CUR[state.site] || ''), series: mk('price') });  // 全部市场时价格币种不同，仅看走势
+  chartB = Highcharts.chart('cBsr', { ...base('小类排名', true, '#'), series: mk('sub_bsr') });
+  chartG = Highcharts.chart('cBig', { ...base('大类排名', true, '#'), series: mk('bsr') });
+}
+
+function exportCsv() {
+  const rows = filtered(), keys = ['date','site','role','brand','asin','parent','owner','price','rating','reviews','sub_bsr','sub_cat','bsr','big_cat','stock','coupon'];
+  const csv = '\ufeff' + keys.join(',') + '\n' + rows.map(r => keys.map(k => `"${r[k] ?? ''}"`).join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  a.download = `竞品数据_${state.site}_${state.from}_${state.to}.csv`; a.click();
+}
+
+// 启动（放在最后，确保上面所有函数/常量已定义）
+if (RAW) boot(RAW);
+else fetch('data.json?v=' + Date.now()).then(r => r.json()).then(boot)
+  .catch(() => $('msg').textContent = '未能加载 data.json，请确认脚本已成功发布数据。');
+</script>
+</body>
+</html>
