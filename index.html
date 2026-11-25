@@ -71,6 +71,7 @@
     <div class="f"><label>品牌</label><select id="fBrand"></select></div>
     <div class="f"><label>父单名</label><select id="fParent"></select></div>
     <div class="f"><label>运营负责人</label><select id="fOwner"></select></div>
+    <div class="f"><label>小类变化</label><div class="seg" id="fBsrDir"><button data-v="all" class="on">全部</button><button data-v="up">上升</button><button data-v="down">下降</button></div></div>
     <div class="f"><label>类型</label><div class="seg" id="fRole"><button data-r="all" class="on">全部</button><button data-r="comp">竞品</button><button data-r="own">我方</button></div></div>
     <div class="f"><label>&nbsp;</label><button class="btn" id="csv">⬇ 导出CSV</button></div>
   </div>
@@ -95,7 +96,7 @@
 // 页面同目录的 data.json 由 competitor_monitor.py 每天自动生成并推送
 let RAW = window.DASH_DATA || null;
 const $ = id => document.getElementById(id);
-const state = { site: 'US', brand: 'all', parent: 'all', owner: 'all', role: 'all', from: '', to: '', sel: new Set(), sortKey: 'sub_bsr', sortAsc: true };
+const state = { site: 'US', brand: 'all', parent: 'all', owner: 'all', bsrDir: 'all', role: 'all', from: '', to: '', sel: new Set(), sortKey: 'sub_bsr', sortAsc: true };
 
 function boot(data) {
   RAW = data.rows;
@@ -130,6 +131,11 @@ function bind() {
     state.role = b.dataset.r; state.sel.clear();
     document.querySelectorAll('#fRole button').forEach(x => x.classList.toggle('on', x === b));
     refreshBrands(); render();
+  });
+  document.querySelectorAll('#fBsrDir button').forEach(b => b.onclick = () => {
+    state.bsrDir = b.dataset.v; state.sel.clear();
+    document.querySelectorAll('#fBsrDir button').forEach(x => x.classList.toggle('on', x === b));
+    render();
   });
   $('csv').onclick = exportCsv;
 }
@@ -184,7 +190,12 @@ const CUR = { US:'$', UK:'£', DE:'€', FR:'€', IT:'€', ES:'€' };
 
 // ================= 渲染 =================
 function render() {
-  const rows = filtered(), groups = byAsin(rows), sum = summary(groups);
+  // 小类变化：dBsr = 区间首日排名 - 末日排名，>0 为上升（排名变好），<0 为下降
+  const bsrOk = s => state.bsrDir === 'all' || (state.bsrDir === 'up' ? s.dBsr > 0 : s.dBsr < 0);
+  const allGroups = byAsin(filtered()), sum = summary(allGroups).filter(bsrOk);
+  const keep = new Set(sum.map(s => s.key));
+  const groups = Object.fromEntries(Object.entries(allGroups).filter(([k]) => keep.has(k)));
+  const rows = Object.values(groups).flat();
   renderKpis(sum); renderTable(sum); renderCharts(groups, sum);
   $('msg').textContent = rows.length ? '' : '当前筛选条件下无数据';
 }
